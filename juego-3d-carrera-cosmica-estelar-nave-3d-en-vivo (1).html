@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- Viewport universal para Teléfono y Computadora -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Juego 3D: Carrera Cósmica Estelar (Nave 3D en Vivo)</title>
+  <meta name="description" content="Videojuego 100% en 3D real con Three.js. Pilota una nave espacial 3D, esquiva asteroides y atraviesa anillos de energía neon. Compatible con teléfono táctil y teclado en PC.">
+  <meta name="theme-color" content="#4f46e5">
+  
+  <!-- Compatibilidad Móvil Nativa (Android & iOS) -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Juego 3D: Carrera Cósmica Estelar (Nave 3D en Vivo)">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Fuentes e Iconos -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Motor 3D Three.js para Juegos y Gráficos 3D en Celular y PC -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  
+  <style>
+    /* Reset universal para pantalla táctil y mouse */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    html, body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      background: #0b0f19;
+      color: #f1f5f9;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      touch-action: manipulation;
+    }
+
+    /* Adaptabilidad táctil en teléfonos: botones cómodos */
+    button, input, select, textarea {
+      font-family: inherit;
+      touch-action: manipulation;
+    }
+
+    @media (max-width: 640px) {
+      button {
+        min-height: 40px;
+      }
+      input, select, textarea {
+        font-size: 16px !important; /* Previene zoom forzado en iPhone */
+      }
+    }
+
+    /* Scrollbars elegantes en PC */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+
+    /* Estilos propios de la aplicación */
+    
+.game3d-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+  background: #030712;
+  color: #fff;
+  font-family: inherit;
+  padding: 0.5rem;
+  user-select: none;
+  touch-action: none;
+}
+.game3d-hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 800px;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #334155;
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.95rem;
+}
+.hud-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hud-stat b {
+  color: #38bdf8;
+  font-family: monospace;
+  font-size: 1.2rem;
+}
+.shield-bar {
+  width: 90px;
+  height: 12px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.shield-bar div {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #06b6d4);
+  transition: width 0.2s ease;
+}
+.game3d-canvas-box {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  height: 520px;
+  background: #000;
+  border: 2px solid #38bdf8;
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(56, 189, 248, 0.25);
+}
+@media (max-width: 640px) {
+  .game3d-canvas-box {
+    height: 380px;
+  }
+}
+.game3d-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.9);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.game3d-overlay.hidden { display: none; }
+.overlay-card {
+  text-align: center;
+  background: #0f172a;
+  border: 1px solid #38bdf8;
+  padding: 2rem 1.5rem;
+  border-radius: 20px;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+}
+.overlay-card h2 {
+  color: #f43f5e;
+  font-size: 1.7rem;
+  font-weight: 900;
+  margin-bottom: 0.5rem;
+}
+.overlay-card p {
+  color: #cbd5e1;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.hi-text {
+  font-size: 0.9rem !important;
+  color: #fbbf24 !important;
+  margin-bottom: 1.5rem !important;
+}
+.modal-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.btn-action {
+  width: 100%;
+  padding: 0.85rem;
+  border-radius: 12px;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.btn-action.primary { background: #38bdf8; color: #022c22; }
+.btn-action.share { background: #25d366; color: #022c22; }
+
+/* Controles táctiles móviles adaptables */
+.mobile-touch-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 800px;
+  margin-top: 0.75rem;
+  padding: 0 0.5rem;
+  gap: 1rem;
+}
+.dpad-group {
+  display: flex;
+  gap: 0.4rem;
+}
+.touch-btn {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #f8fafc;
+  padding: 0.85rem 1.1rem;
+  border-radius: 12px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+  active: scale(0.95);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+.touch-btn:active, .touch-btn.pressed {
+  background: #38bdf8;
+  color: #030712;
+  border-color: #7dd3fc;
+}
+.boost-btn {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  border: 1px solid #f97316;
+  color: #fff;
+  font-size: 0.95rem;
+  padding: 0.85rem 1.4rem;
+}
+.device-help-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-top: 0.65rem;
+  text-align: center;
+}
+
+  </style>
+</head>
+<body>
+  <!-- Contenedor Principal Adaptable a Celular y Computadora -->
+  <div id="app-root">
+    
+<div class="game3d-root">
+  <div class="game3d-hud">
+    <div class="hud-stat"><span>Puntaje:</span><b id="hud-score">0</b></div>
+    <div class="hud-stat"><span>Escudo:</span><div class="shield-bar"><div id="hud-shield" style="width: 100%;"></div></div></div>
+    <div class="hud-stat"><span>Velocidad:</span><b id="hud-speed">1.0x</b></div>
+  </div>
+
+  <div id="canvas-container" class="game3d-canvas-box">
+    <!-- Three.js Canvas injected here -->
+    <div id="game-over-modal" class="game3d-overlay hidden">
+      <div class="overlay-card">
+        <h2>💥 ¡IMPACTO CRÍTICO!</h2>
+        <p>Puntaje obtenido: <b id="final-score-val">0</b></p>
+        <p class="hi-text">Récord galáctico: <b id="final-hiscore-val">0</b></p>
+        <div class="modal-buttons">
+          <button id="btn-restart-3d" class="btn-action primary">🔄 Jugar de Nuevo</button>
+          <button id="btn-share-3d" class="btn-action share">🔥 Pasar mi Puntaje a Redes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controles Duales en Pantalla para Teléfono Móvil -->
+  <div class="mobile-touch-bar">
+    <div class="dpad-group">
+      <button id="btn-left" class="touch-btn" aria-label="Mover a la izquierda">◀</button>
+      <button id="btn-up" class="touch-btn" aria-label="Subir">▲</button>
+      <button id="btn-down" class="touch-btn" aria-label="Bajar">▼</button>
+      <button id="btn-right" class="touch-btn" aria-label="Mover a la derecha">▶</button>
+    </div>
+    <div class="action-group">
+      <button id="btn-boost" class="touch-btn boost-btn">🚀 TURBO</button>
+    </div>
+  </div>
+
+  <div class="device-help-hint">
+    <span>💻 En PC: Usa <b>Flechas</b> o <b>WASD</b> + <b>Espacio</b> (Turbo)</span>
+    <span>📱 En Celular: Usa los botones táctiles o desliza tu dedo</span>
+  </div>
+</div>
+
+  </div>
+
+  <!-- Motor de compatibilidad Teléfono + PC -->
+  <script>
+    (function() {
+      // 1. Desbloqueo automático de audio en celulares (iOS Safari y Android)
+      function unlockAudio() {
+        if (window.AudioContext || window.webkitAudioContext) {
+          try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            if (ctx.state === 'suspended') {
+              ctx.resume();
+            }
+          } catch(e) {}
+        }
+      }
+      window.addEventListener('pointerdown', unlockAudio, { once: true });
+      window.addEventListener('touchstart', unlockAudio, { once: true });
+
+      // 2. Almacenamiento seguro en LocalStorage con fallback
+      try {
+        localStorage.setItem('__test_storage__', '1');
+        localStorage.removeItem('__test_storage__');
+      } catch (e) {
+        console.warn('LocalStorage en modo memoria para compatibilidad de archivos locales.');
+        var memStorage = {};
+        window.localStorage = {
+          getItem: function(k) { return memStorage[k] || null; },
+          setItem: function(k, v) { memStorage[k] = String(v); },
+          removeItem: function(k) { delete memStorage[k]; },
+          clear: function() { memStorage = {}; }
+        };
+      }
+
+      // 3. Ejecutar código de la aplicación
+      try {
+        
+// Three.js 3D Cosmic Starship Game Engine
+(function() {
+  function start3DExperience() {
+    const container = document.getElementById('canvas-container');
+    if (!container) return;
+
+    const width = container.clientWidth || 800;
+    const height = container.clientHeight || 500;
+
+    // 1. Scene & Camera
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x030712, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+    camera.position.set(0, 3, 8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    container.appendChild(renderer.domElement);
+
+    // 2. Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0x38bdf8, 1.2);
+    dirLight.position.set(5, 12, 10);
+    scene.add(dirLight);
+
+    const pointLight = new THREE.PointLight(0xec4899, 2, 25);
+    pointLight.position.set(0, 0, 0);
+    scene.add(pointLight);
+
+    // 3. Procedural 3D Starship
+    const shipGroup = new THREE.Group();
+
+    // Fuselage
+    const bodyGeo = new THREE.ConeGeometry(0.8, 3.2, 8);
+    bodyGeo.rotateX(Math.PI / 2);
+    const bodyMat = new THREE.MeshStandardMaterial({ 
+      color: 0x0284c7, 
+      metalness: 0.8, 
+      roughness: 0.2 
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    shipGroup.add(body);
+
+    // Cockpit
+    const cockpitGeo = new THREE.SphereGeometry(0.45, 16, 16);
+    cockpitGeo.scale(1, 0.8, 1.8);
+    const cockpitMat = new THREE.MeshStandardMaterial({ 
+      color: 0x38bdf8, 
+      emissive: 0x0284c7,
+      roughness: 0.1,
+      metalness: 0.9 
+    });
+    const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+    cockpit.position.set(0, 0.35, 0.2);
+    shipGroup.add(cockpit);
+
+    // Wings
+    const wingGeo = new THREE.BoxGeometry(4.2, 0.08, 1.4);
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.5 });
+    const wings = new THREE.Mesh(wingGeo, wingMat);
+    wings.position.set(0, 0, -0.2);
+    shipGroup.add(wings);
+
+    // Thruster engines
+    const thrusterGeo = new THREE.CylinderGeometry(0.2, 0.25, 0.6, 8);
+    thrusterGeo.rotateX(Math.PI / 2);
+    const thrusterMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+    const leftThruster = new THREE.Mesh(thrusterGeo, thrusterMat);
+    leftThruster.position.set(-0.8, 0, 1.4);
+    const rightThruster = new THREE.Mesh(thrusterGeo, thrusterMat);
+    rightThruster.position.set(0.8, 0, 1.4);
+    shipGroup.add(leftThruster);
+    shipGroup.add(rightThruster);
+
+    shipGroup.position.set(0, 0, 0);
+    scene.add(shipGroup);
+
+    // 4. Starfield Particles
+    const starCount = 1200;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i += 3) {
+      starPos[i] = (Math.random() - 0.5) * 120;
+      starPos[i + 1] = (Math.random() - 0.5) * 80;
+      starPos[i + 2] = -Math.random() * 200;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.6 });
+    const starField = new THREE.Points(starGeo, starMat);
+    scene.add(starField);
+
+    // 5. 3D Obstacles (Asteroids) and 3D Rings
+    const asteroids = [];
+    const asteroidGeo = new THREE.DodecahedronGeometry(1.2, 1);
+    const asteroidMat = new THREE.MeshStandardMaterial({ 
+      color: 0x64748b, 
+      roughness: 0.9,
+      metalness: 0.1 
+    });
+
+    const rings = [];
+    const ringGeo = new THREE.TorusGeometry(2.2, 0.12, 8, 24);
+    const ringMat = new THREE.MeshStandardMaterial({ 
+      color: 0x06b6d4, 
+      emissive: 0x06b6d4, 
+      emissiveIntensity: 0.8 
+    });
+
+    function spawnAsteroid(z) {
+      const ast = new THREE.Mesh(asteroidGeo, asteroidMat);
+      ast.position.set(
+        (Math.random() - 0.5) * 22,
+        (Math.random() - 0.5) * 12,
+        z || -150
+      );
+      ast.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+      ast.rotSpeed = { x: (Math.random() - 0.5) * 0.05, y: (Math.random() - 0.5) * 0.05 };
+      scene.add(ast);
+      asteroids.push(ast);
+    }
+
+    function spawnRing(z) {
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(
+        (Math.random() - 0.5) * 16,
+        (Math.random() - 0.5) * 8,
+        z || -150
+      );
+      scene.add(ring);
+      rings.push(ring);
+    }
+
+    // Initial populate
+    for (let i = 0; i < 15; i++) {
+      spawnAsteroid(-30 - i * 10);
+    }
+    for (let i = 0; i < 6; i++) {
+      spawnRing(-40 - i * 25);
+    }
+
+    // Game State
+    let isRunning = true;
+    let score = 0;
+    let shield = 100;
+    let speed = 1.0;
+    let targetX = 0, targetY = 0;
+    let hiScore = localStorage.getItem('cosmo_3d_hi') || 0;
+
+    const hudScore = document.getElementById('hud-score');
+    const hudShield = document.getElementById('hud-shield');
+    const hudSpeed = document.getElementById('hud-speed');
+    const modalOver = document.getElementById('game-over-modal');
+    const finalScoreVal = document.getElementById('final-score-val');
+    const finalHiScoreVal = document.getElementById('final-hiscore-val');
+
+    // Controls tracking
+    const keys = { left: false, right: false, up: false, down: false, boost: false };
+
+    // Keyboard controls (Computer)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
+      if (e.code === 'Space') keys.boost = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
+      if (e.code === 'Space') keys.boost = false;
+    });
+
+    // Touch controls (Mobile)
+    function attachTouch(id, prop) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('pointerdown', (e) => { e.preventDefault(); keys[prop] = true; el.classList.add('pressed'); });
+      el.addEventListener('pointerup', (e) => { e.preventDefault(); keys[prop] = false; el.classList.remove('pressed'); });
+      el.addEventListener('pointerleave', () => { keys[prop] = false; el.classList.remove('pressed'); });
+    }
+    attachTouch('btn-left', 'left');
+    attachTouch('btn-right', 'right');
+    attachTouch('btn-up', 'up');
+    attachTouch('btn-down', 'down');
+    attachTouch('btn-boost', 'boost');
+
+    // Direct touch drag steering on canvas
+    let touchStartX = 0, touchStartY = 0;
+    container.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 0) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        const deltaX = e.touches[0].clientX - touchStartX;
+        const deltaY = e.touches[0].clientY - touchStartY;
+        targetX += deltaX * 0.02;
+        targetY -= deltaY * 0.02;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    // Web Audio synthesizer for sounds
+    function playBeep(freq, type = 'sine', duration = 0.1) {
+      try {
+        const ctx = window.AudioContext ? new AudioContext() : null;
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    // Animation Loop
+    function animate() {
+      if (isRunning) {
+        // Handle input motion
+        const moveSpeed = keys.boost ? 0.35 : 0.22;
+        if (keys.left) targetX -= moveSpeed;
+        if (keys.right) targetX += moveSpeed;
+        if (keys.up) targetY += moveSpeed;
+        if (keys.down) targetY -= moveSpeed;
+
+        targetX = Math.max(-10, Math.min(10, targetX));
+        targetY = Math.max(-6, Math.min(6, targetY));
+
+        // Smooth ship positioning & banking
+        shipGroup.position.x += (targetX - shipGroup.position.x) * 0.12;
+        shipGroup.position.y += (targetY - shipGroup.position.y) * 0.12;
+        shipGroup.rotation.z = -(targetX - shipGroup.position.x) * 0.25;
+        shipGroup.rotation.x = (targetY - shipGroup.position.y) * 0.2;
+
+        // Camera follow
+        camera.position.x = shipGroup.position.x * 0.35;
+        camera.position.y = shipGroup.position.y * 0.35 + 2.5;
+        camera.lookAt(shipGroup.position.x * 0.5, shipGroup.position.y * 0.5, -20);
+
+        // Speed multiplier
+        const baseSpeed = keys.boost ? 1.6 : 1.0;
+        speed = 1.0 + Math.floor(score / 500) * 0.15 + (keys.boost ? 0.5 : 0);
+        hudSpeed.innerText = speed.toFixed(1) + 'x';
+
+        // Animate Starfield
+        const pos = starGeo.attributes.position.array;
+        for (let i = 2; i < starCount * 3; i += 3) {
+          pos[i] += baseSpeed * 1.5;
+          if (pos[i] > 10) pos[i] = -180;
+        }
+        starGeo.attributes.position.needsUpdate = true;
+
+        // Animate Asteroids
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+          const a = asteroids[i];
+          a.position.z += 0.8 * speed;
+          a.rotation.x += a.rotSpeed.x;
+          a.rotation.y += a.rotSpeed.y;
+
+          // Collision detection with 3D ship
+          const dist = shipGroup.position.distanceTo(a.position);
+          if (dist < 1.8) {
+            playBeep(120, 'sawtooth', 0.25);
+            shield -= 35;
+            hudShield.style.width = Math.max(0, shield) + '%';
+            scene.remove(a);
+            asteroids.splice(i, 1);
+            spawnAsteroid(-150);
+
+            if (shield <= 0) {
+              gameOver();
+              break;
+            }
+          } else if (a.position.z > 15) {
+            scene.remove(a);
+            asteroids.splice(i, 1);
+            spawnAsteroid(-150);
+          }
+        }
+
+        // Animate Neon Rings (Bonus Points)
+        for (let i = rings.length - 1; i >= 0; i--) {
+          const r = rings[i];
+          r.position.z += 0.9 * speed;
+          r.rotation.z += 0.02;
+
+          const dist = shipGroup.position.distanceTo(r.position);
+          if (dist < 2.0) {
+            playBeep(680, 'sine', 0.15);
+            score += 100;
+            scene.remove(r);
+            rings.splice(i, 1);
+            spawnRing(-160);
+          } else if (r.position.z > 15) {
+            scene.remove(r);
+            rings.splice(i, 1);
+            spawnRing(-160);
+          }
+        }
+
+        score += Math.round(speed * 2);
+        hudScore.innerText = score;
+      }
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    function gameOver() {
+      isRunning = false;
+      finalScoreVal.innerText = score;
+      if (score > hiScore) {
+        hiScore = score;
+        localStorage.setItem('cosmo_3d_hi', hiScore);
+      }
+      finalHiScoreVal.innerText = hiScore;
+      modalOver.classList.remove('hidden');
+    }
+
+    document.getElementById('btn-restart-3d').addEventListener('click', () => {
+      score = 0;
+      shield = 100;
+      hudShield.style.width = '100%';
+      targetX = 0;
+      targetY = 0;
+      shipGroup.position.set(0, 0, 0);
+      modalOver.classList.add('hidden');
+      isRunning = true;
+    });
+
+    document.getElementById('btn-share-3d').addEventListener('click', () => {
+      const msg = encodeURIComponent(`🚀 ¡Conseguí ${score} puntos pilotando la nave 3D en Carrera Cósmica! ¿Puedes superarme? Juega gratis en Celular o PC aquí: ${window.location.href}`);
+      window.open(`https://api.whatsapp.com/send?text=${msg}`, '_blank');
+    });
+
+    // Handle Window Resize
+    window.addEventListener('resize', () => {
+      const newW = container.clientWidth;
+      const newH = container.clientHeight;
+      camera.aspect = newW / newH;
+      camera.updateProjectionMatrix();
+      renderer.setSize(newW, newH);
+    });
+
+    animate();
+  }
+
+  // Check if THREE is loaded; if not, inject it dynamically
+  if (typeof THREE === 'undefined') {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    s.onload = start3DExperience;
+    document.head.appendChild(s);
+  } else {
+    start3DExperience();
+  }
+})();
+
+      } catch (err) {
+        console.error("Error en la aplicación:", err);
+      }
+    })();
+  </script>
+</body>
+</html>
