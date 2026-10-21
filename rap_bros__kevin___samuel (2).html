@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Rap Bros: Kevin & Samuel</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050508;
+            font-family: 'Courier New', Courier, monospace;
+            color: #fff;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle, #1a0826 0%, #05050a 100%);
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            box-shadow: 0 0 35px rgba(255, 0, 128, 0.4);
+            border: 2px solid #ff007f;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        /* Mobile / Touch Overlay */
+        #touch-controls {
+            position: absolute;
+            bottom: 12px;
+            left: 0;
+            width: 100%;
+            height: 130px;
+            display: none;
+            justify-content: space-between;
+            padding: 0 24px;
+            pointer-events: none;
+            z-index: 50;
+        }
+        .d-pad, .action-pad {
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+            align-items: center;
+        }
+        .btn-touch {
+            width: 62px;
+            height: 62px;
+            background: rgba(15, 15, 25, 0.75);
+            border: 2px solid #00f0ff;
+            border-radius: 50%;
+            color: #00f0ff;
+            font-size: 22px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+            active-background: #00f0ff;
+            touch-action: manipulation;
+        }
+        .btn-touch:active, .btn-touch.active {
+            background: #ff007f;
+            border-color: #ffe600;
+            color: #fff;
+            box-shadow: 0 0 25px #ff007f;
+            transform: scale(0.92);
+        }
+        .btn-action {
+            width: 66px;
+            height: 66px;
+            border-color: #ffe600;
+            color: #ffe600;
+        }
+        .btn-action:active, .btn-action.active {
+            background: #ffe600;
+            color: #000;
+        }
+
+        /* Top HUD */
+        #top-ui {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 24px;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-shadow: 0 0 8px #ff007f, 0 0 15px #00f0ff;
+            z-index: 40;
+            pointer-events: none;
+            width: 90%;
+            max-width: 800px;
+            justify-content: space-between;
+        }
+        .hud-val {
+            color: #ffe600;
+        }
+
+        /* Audio Indicator & TV Navigation helper */
+        #audio-hint {
+            position: absolute;
+            bottom: 6px;
+            right: 12px;
+            font-size: 11px;
+            color: #6a6a8a;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="854" height="480"></canvas>
+        
+        <div id="top-ui">
+            <div>MC: <span id="ui-mc" class="hud-val">KEVIN</span></div>
+            <div>FLOW: <span id="ui-score" class="hud-val">000000</span></div>
+            <div>VINILOS: <span id="ui-coins" class="hud-val">x00</span></div>
+            <div>STAGE: <span id="ui-stage" class="hud-val">1-1</span></div>
+            <div>TIME: <span id="ui-time" class="hud-val">300</span></div>
+            <div>LIVES: <span id="ui-lives" class="hud-val">x3</span></div>
+        </div>
+
+        <div id="touch-controls">
+            <div class="d-pad">
+                <div class="btn-touch" id="t-left">◀</div>
+                <div class="btn-touch" id="t-right">▶</div>
+                <div class="btn-touch" id="t-down">▼</div>
+            </div>
+            <div class="action-pad">
+                <div class="btn-touch btn-action" id="t-shoot">MIC</div>
+                <div class="btn-touch btn-action" id="t-jump">JUMP</div>
+            </div>
+        </div>
+        <div id="audio-hint">RAP BROS v1.0 | PC: WASD/Arrows + Z/X/Space | TV: D-Pad + Enter</div>
+    </div>
+
+<script>
+/* ==========================================================================
+   RAP BROS: KEVIN & SAMUEL - ENGINE & GAME CODE
+   ========================================================================== */
+
+// --- AUDIO SYNTHESIZER (Web Audio API) ---
+class RapSoundEngine {
+    constructor() {
+        this.ctx = null;
+        this.beatTimer = 0;
+        this.beatStep = 0;
+        this.isPlayingBeat = false;
+    }
+
+    init() {
+        if (!this.ctx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    }
+
+    playTone(freq, type, duration, vol = 0.1, sweep = null) {
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            if (sweep) {
+                osc.frequency.exponentialRampToValueAtTime(sweep, this.ctx.currentTime + duration);
+            }
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+    }
+
+    jump() {
+        this.init();
+        this.playTone(160, 'square', 0.22, 0.15, 480);
+    }
+
+    stomp() {
+        this.init();
+        this.playTone(90, 'triangle', 0.18, 0.25, 40);
+    }
+
+    coin() {
+        this.init();
+        this.playTone(880, 'sine', 0.08, 0.12);
+        setTimeout(() => this.playTone(1320, 'sine', 0.18, 0.12), 70);
+    }
+
+    shoot() {
+        this.init();
+        this.playTone(600, 'sawtooth', 0.12, 0.15, 120);
+    }
+
+    powerup() {
+        this.init();
+        const notes = [330, 392, 493, 587, 659];
+        notes.forEach((freq, idx) => {
+            setTimeout(() => this.playTone(freq, 'square', 0.12, 0.14), idx * 60);
+        });
+    }
+
+    bossHurt() {
+        this.init();
+        this.playTone(140, 'sawtooth', 0.35, 0.3, 40);
+    }
+
+    victoryTune() {
+        this.init();
+        const notes = [261, 329, 392, 523, 659, 783, 1046];
+        notes.forEach((freq, idx) => {
+            setTimeout(() => this.playTone(freq, 'square', 0.25, 0.18), idx * 120);
+        });
+    }
+
+    // Street Rap Background Beat
+    updateBeat(dt) {
+        if (!this.ctx || !this.isPlayingBeat) return;
+        this.beatTimer += dt;
+        const bpm = 94;
+        const stepTime = 60 / bpm / 4; // 16th notes
+        if (this.beatTimer >= stepTime) {
+            this.beatTimer -= stepTime;
+            this.step(this.beatStep % 16);
+            this.beatStep++;
+        }
+    }
+
+    step(s) {
+        // Boom-Bap loop
+        if (s === 0 || s === 7 || s === 10) {
+            // Kick
+            this.playTone(95, 'triangle', 0.16, 0.28, 30);
+        }
+        if (s === 4 || s === 12) {
+            // Snare / Clap
+            this.playTone(220, 'square', 0.12, 0.15, 60);
+        }
+        if (s % 2 === 0) {
+            // Hi-hat
+            this.playTone(1800, 'square', 0.02, 0.04, 300);
+        }
+        // Bassline
+        if (s === 0 || s === 6 || s === 10 || s === 14) {
+            const bassNotes = [65.4, 73.4, 55.0, 82.4];
+            const note = bassNotes[(s / 4 | 0) % bassNotes.length];
+            this.playTone(note, 'sawtooth', 0.2, 0.1);
+        }
+    }
+}
+
+const Audio = new RapSoundEngine();
+
+// --- CONTROLS MANAGER ---
+const keys = {
+    left: false,
+    right: false,
+    down: false,
+    jump: false,
+    jumpPressed: false,
+    shoot: false,
+    shootPressed: false,
+    enter: false
+};
+
+window.addEventListener('keydown', (e) => {
+    Audio.init();
+    if (!Audio.isPlayingBeat && gameState === 'PLAYING') Audio.isPlayingBeat = true;
+
+    switch (e.code) {
+        case 'ArrowLeft':
+        case 'KeyA':
+            keys.left = true;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            keys.right = true;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            keys.down = true;
+            break;
+        case 'ArrowUp':
+        case 'KeyW':
+        case 'Space':
+            if (!keys.jump) keys.jumpPressed = true;
+            keys.jump = true;
+            break;
+        case 'KeyZ':
+        case 'KeyJ':
+        case 'ShiftLeft':
+        case 'ShiftRight':
+            if (!keys.shoot) keys.shootPressed = true;
+            keys.shoot = true;
+            break;
+        case 'Enter':
+            keys.enter = true;
+            handleEnterPress();
+            break;
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    switch (e.code) {
+        case 'ArrowLeft':
+        case 'KeyA':
+            keys.left = false;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            keys.right = false;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            keys.down = false;
+            break;
+        case 'ArrowUp':
+        case 'KeyW':
+        case 'Space':
+            keys.jump = false;
+            break;
+        case 'KeyZ':
+        case 'KeyJ':
+        case 'ShiftLeft':
+        case 'ShiftRight':
+            keys.shoot = false;
+            break;
+        case 'Enter':
+            keys.enter = false;
+            break;
+    }
+});
+
+// Touch controls setup
+function setupTouch() {
+    const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const touchOverlay = document.getElementById('touch-controls');
+    if (isTouch) {
+        touchOverlay.style.display = 'flex';
+    }
+
+    const bind = (id, onDown, onUp) => {
+        const el = document.getElementById(id);
+        el.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            Audio.init();
+            if (!Audio.isPlayingBeat && gameState === 'PLAYING') Audio.isPlayingBeat = true;
+            el.classList.add('active');
+            onDown();
+        });
+        el.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            el.classList.remove('active');
+            onUp();
+        });
+        el.addEventListener('touchcancel', (e) => {
+            el.classList.remove('active');
+            onUp();
+        });
+    };
+
+    bind('t-left', () => keys.left = true, () => keys.left = false);
+    bind('t-right', () => keys.right = true, () => keys.right = false);
+    bind('t-down', () => keys.down = true, () => keys.down = false);
+    bind('t-jump', () => { keys.jump = true; keys.jumpPressed = true; }, () => keys.jump = false);
+    bind('t-shoot', () => { keys.shoot = true; keys.shootPressed = true; }, () => keys.shoot = false);
+
+    window.addEventListener('touchstart', () => Audio.init(), { once: true });
+}
+
+// --- GLOBAL GAME STATES & DATA ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const V_WIDTH = 854;
+const V_HEIGHT = 480;
+
+let gameState = 'TITLE'; // TITLE, CHAR_SELECT, PLAYING, LEVEL_CLEAR, GAME_OVER, VICTORY
+let selectedHero = 'KEVIN'; // 'KEVIN' (Speed & Jump) or 'SAMUEL' (Heavy Beats & High Bounce)
+let currentLevelIndex = 0; // 0 = Street 1-1, 1 = Castle 1-2 (Hater Mayor Fortress)
+
+let score = 0;
+let coins = 0;
+let lives = 3;
+let stageTime = 300;
+let timeAccumulator = 0;
+
+// Particle system
+let particles = [];
+function addParticles(x, y, color, count = 8, speed = 3) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const spd = Math.random() * speed + 1;
+        particles.push({
+            x, y,
+            vx: Math.cos(angle) * spd,
+            vy: Math.sin(angle) * spd - 1,
+            color,
+            life: 1,
+            decay: Math.random() * 0.03 + 0.02,
+            size: Math.random() * 5 + 3
+        });
+    }
+}
+
+// --- PLAYER CLASS ---
+class Player {
+    constructor(x, y, hero = 'KEVIN') {
+        this.x = x;
+        this.y = y;
+        this.hero = hero;
+        this.power = 0; // 0 = Small, 1 = Super Mic (Big), 2 = Beat Gun (Shoots lyrical beats)
+        this.w = 26;
+        this.h = 36;
+        this.vx = 0;
+        this.vy = 0;
+        this.isGrounded = false;
+        this.facing = 1; // 1 = right, -1 = left
+        this.invulnTimer = 0;
+        this.crouching = false;
+        this.animFrame = 0;
+        this.animTimer = 0;
+        this.isDead = false;
+        this.shootCooldown = 0;
+    }
+
+    update(dt, map) {
+        if (this.isDead) {
+            this.vy += 22 * dt;
+            this.y += this.vy * 60 * dt;
+            return;
+        }
+
+        if (this.shootCooldown > 0) this.shootCooldown -= dt;
+        if (this.invulnTimer > 0) this.invulnTimer -= dt;
+
+        // Size adjustment based on power
+        if (this.power >= 1) {
+            this.w = 30;
+            this.h = 54;
+        } else {
+            this.w = 26;
+            this.h = 36;
+        }
+
+        // Crouch check
+        this.crouching = keys.down && this.isGrounded && this.power >= 1;
+        if (this.crouching) {
+            this.h = 34;
+        }
+
+        // Movement Physics
+        const maxSpeed = this.hero === 'KEVIN' ? 4.6 : 4.1;
+        const accel = 14 * dt;
+        const friction = this.isGrounded ? 0.82 : 0.94;
+
+        if (!this.crouching) {
+            if (keys.left) {
+                this.vx -= accel * 60;
+                this.facing = -1;
+            } else if (keys.right) {
+                this.vx += accel * 60;
+                this.facing = 1;
+            } else {
+                this.vx *= friction;
+            }
+        } else {
+            this.vx *= 0.6;
+        }
+
+        if (Math.abs(this.vx) > maxSpeed) {
+            this.vx = Math.sign(this.vx) * maxSpeed;
+        }
+        if (Math.abs(this.vx) < 0.05) this.vx = 0;
+
+        // Jump mechanics
+        const jumpForce = this.hero === 'KEVIN' ? -10.2 : -11.0;
+        if (keys.jumpPressed) {
+            keys.jumpPressed = false;
+            if (this.isGrounded) {
+                this.vy = jumpForce;
+                this.isGrounded = false;
+                Audio.jump();
+                addParticles(this.x + this.w / 2, this.y + this.h, '#00f0ff', 6, 2);
+            }
+        }
+        // Variable jump height
+        if (!keys.jump && this.vy < -4) {
+            this.vy = -4;
+        }
+
+        // Shooting (Lyrical Beats)
+        if (keys.shootPressed) {
+            keys.shootPressed = false;
+            if (this.power === 2 && this.shootCooldown <= 0) {
+                this.shootBeat();
+            }
+        }
+
+        // Gravity
+        this.vy += 26 * dt;
+        if (this.vy > 14) this.vy = 14;
+
+        // Move Horizontal & Collide
+        this.x += this.vx * 60 * dt;
+        this.collideHorizontal(map);
+
+        // Move Vertical & Collide
+        this.y += this.vy * 60 * dt;
+        this.isGrounded = false;
+        this.collideVertical(map);
+
+        // Animation
+        if (Math.abs(this.vx) > 0.3) {
+            this.animTimer += dt * 10;
+            this.animFrame = Math.floor(this.animTimer) % 4;
+        } else {
+            this.animFrame = 0;
+        }
+
+        // Pit death
+        if (this.y > map.pixelHeight + 100) {
+            this.die();
+        }
+    }
+
+    shootBeat() {
+        this.shootCooldown = 0.28;
+        Audio.shoot();
+        const bx = this.facing === 1 ? this.x + this.w + 4 : this.x - 14;
+        const by = this.y + (this.h * 0.4);
+        bullets.push(new BeatBullet(bx, by, this.facing));
+        addParticles(bx, by, '#ff007f', 7, 3);
+    }
+
+    collideHorizontal(map) {
+        const leftTile = Math.floor(this.x / map.tileSize);
+        const rightTile = Math.floor((this.x + this.w) / map.tileSize);
+        const topTile = Math.floor(this.y / map.tileSize);
+        const botTile = Math.floor((this.y + this.h - 1) / map.tileSize);
+
+        for (let ty = topTile; ty <= botTile; ty++) {
+            for (let tx = leftTile; tx <= rightTile; tx++) {
+                if (map.isSolid(tx, ty)) {
+                    if (this.vx > 0) {
+                        this.x = tx * map.tileSize - this.w;
+                        this.vx = 0;
+                    } else if (this.vx < 0) {
+                        this.x = (tx + 1) * map.tileSize;
+                        this.vx = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    collideVertical(map) {
+        const leftTile = Math.floor(this.x / map.tileSize);
+        const rightTile = Math.floor((this.x + this.w - 1) / map.tileSize);
+        const topTile = Math.floor(this.y / map.tileSize);
+        const botTile = Math.floor((this.y + this.h) / map.tileSize);
+
+        for (let tx = leftTile; tx <= rightTile; tx++) {
+            // Collision Ceiling
+            if (this.vy < 0 && map.isSolid(tx, topTile)) {
+                this.y = (topTile + 1) * map.tileSize;
+                this.vy = 0;
+                map.bumpBlock(tx, topTile, this);
+            }
+            // Collision Ground
+            if (this.vy >= 0 && map.isSolid(tx, botTile)) {
+                this.y = botTile * map.tileSize - this.h;
+                this.vy = 0;
+                this.isGrounded = true;
+            }
+        }
+    }
+
+    hit() {
+        if (this.invulnTimer > 0 || this.isDead) return;
+        if (this.power > 0) {
+            this.power = 0;
+            this.invulnTimer = 2.0;
+            Audio.bossHurt();
+            addParticles(this.x + this.w/2, this.y + this.h/2, '#ffaa00', 16, 4);
+        } else {
+            this.die();
+        }
+    }
+
+    die() {
+        if (this.isDead) return;
+        this.isDead = true;
+        this.vy = -11;
+        this.vx = 0;
+        Audio.bossHurt();
+        lives--;
+        updateHUD();
+        setTimeout(() => {
+            if (lives <= 0) {
+                gameState = 'GAME_OVER';
+                Audio.isPlayingBeat = false;
+            } else {
+                restartLevel();
+            }
+        }, 2200);
+    }
+
+    render(ctx, camX) {
+        const drawX = Math.round(this.x - camX);
+        const drawY = Math.round(this.y);
+
+        if (this.invulnTimer > 0 && Math.floor(Date.now() / 80) % 2 === 0) {
+            return; // Flashing flicker effect
+        }
+
+        ctx.save();
+        ctx.translate(drawX + this.w / 2, drawY + this.h / 2);
+        if (this.facing === -1) ctx.scale(-1, 1);
+
+        const hw = this.w / 2;
+        const hh = this.h / 2;
+
+        // Custom Neon Retro Rap Character Rendering
+        const capColor = this.hero === 'KEVIN' ? '#ff0055' : '#00ff88';
+        const shirtColor = this.hero === 'KEVIN' ? '#181828' : '#281534';
+        const pantsColor = this.power === 2 ? '#ffe600' : '#00e5ff';
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(0, hh - 2, hw, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Shoes / Sneakers
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-hw, hh - 6, 8, 6);
+        ctx.fillRect(hw - 8, hh - 6, 8, 6);
+        ctx.fillStyle = '#ff0055';
+        ctx.fillRect(-hw + 1, hh - 3, 6, 3);
+        ctx.fillRect(hw - 7, hh - 3, 6, 3);
+
+        // Baggy Pants
+        ctx.fillStyle = pantsColor;
+        ctx.fillRect(-hw + 2, hh - 18, hw * 2 - 4, 13);
+
+        // Body / Oversized Rap Hoodie
+        ctx.fillStyle = shirtColor;
+        ctx.fillRect(-hw + 1, -hh + 10, hw * 2 - 2, hh + 2);
+
+        // Gold Chain / Bling
+        ctx.strokeStyle = '#ffe600';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, -hh + 14, 5, 0, Math.PI);
+        ctx.stroke();
+
+        // Head / Skin
+        ctx.fillStyle = '#d29668';
+        ctx.fillRect(-6, -hh + 2, 12, 10);
+
+        // Sunglasses (Shades)
+        ctx.fillStyle = '#111';
+        ctx.fillRect(-3, -hh + 5, 10, 4);
+        ctx.fillStyle = '#00f0ff';
+        ctx.fillRect(2, -hh + 6, 4, 2);
+
+        // Fitted Cap / Snapback
+        ctx.fillStyle = capColor;
+        ctx.fillRect(-8, -hh - 4, 16, 7);
+        // Cap Visor (facing right)
+        ctx.fillRect(0, -hh + 1, 12, 3);
+
+        // Handheld Item or Power visual
+        if (this.power === 1) {
+            // Golden Studio Mic in hand
+            ctx.fillStyle = '#ffe600';
+            ctx.fillRect(hw - 2, -2, 6, 12);
+            ctx.fillStyle = '#aaa';
+            ctx.fillRect(hw - 3, -6, 8, 6);
+        } else if (this.power === 2) {
+            // Neon Beat Blaster
+            ctx.fillStyle = '#ff007f';
+            ctx.fillRect(hw - 2, -4, 12, 8);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(hw + 4, -2, 7, 3);
+        }
+
+        ctx.restore();
+    }
+}
+
+// --- PROJECTILE: BEAT BULLET (Musical Rhymes) ---
+class BeatBullet {
+    constructor(x, y, dir) {
+        this.x = x;
+        this.y = y;
+        this.vx = dir * 7.5;
+        this.vy = 1.2;
+        this.w = 14;
+        this.h = 14;
+        this.bounces = 0;
+        this.alive = true;
+        this.symbols = ['♫', 'BARS', 'FLOW', '♩', '🔥'];
+        this.symbol = this.symbols[Math.floor(Math.random() * this.symbols.length)];
+    }
+
+    update(dt, map) {
+        this.vy += 18 * dt;
+        this.x += this.vx * 60 * dt;
+        this.y += this.vy * 60 * dt;
+
+        // Bounce ground
+        const tx = Math.floor((this.x + 7) / map.tileSize);
+        const ty = Math.floor((this.y + 14) / map.tileSize);
+        if (map.isSolid(tx, ty)) {
+            this.y = ty * map.tileSize - 14;
+            this.vy = -5.5;
+            this.bounces++;
+            if (this.bounces > 4) this.destroy();
+        }
+
+        // Wall hit
+        const wx = Math.floor((this.x + (this.vx > 0 ? 14 : 0)) / map.tileSize);
+        const wy = Math.floor((this.y + 7) / map.tileSize);
+        if (map.isSolid(wx, wy)) {
+            this.destroy();
+        }
+
+        if (this.x < 0 || this.x > map.pixelWidth || this.y > map.pixelHeight) {
+            this.alive = false;
+        }
+    }
+
+    destroy() {
+        this.alive = false;
+        addParticles(this.x, this.y, '#ffe600', 8, 3);
+    }
+
+    render(ctx, camX) {
+        const dx = Math.round(this.x - camX);
+        const dy = Math.round(this.y);
+
+        ctx.save();
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillStyle = '#ff007f';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 8;
+        ctx.fillText(this.symbol, dx, dy + 10);
+        ctx.restore();
+    }
+}
+
+// --- COLLECTIBLES / ITEMS ---
+class Item {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type; // 'MIC', 'GUN', 'VINYL'
+        this.w = 24;
+        this.h = 24;
+        this.vx = (type === 'VINYL') ? 0 : 1.6;
+        this.vy = (type === 'VINYL') ? -7 : -2;
+        this.alive = true;
+        this.isGrounded = false;
+    }
+
+    update(dt, map) {
+        if (this.type === 'VINYL') {
+            this.vy += 18 * dt;
+            this.y += this.vy * 60 * dt;
+            if (this.vy > 4) {
+                this.alive = false;
+            }
+            return;
+        }
+
+        // Moving Power-up physics
+        this.vy += 22 * dt;
+        if (this.vy > 9) this.vy = 9;
+
+        this.x += this.vx * 60 * dt;
+        const sideTile = Math.floor((this.x + (this.vx > 0 ? this.w : 0)) / map.tileSize);
+        const midTile = Math.floor((this.y + 12) / map.tileSize);
+        if (map.isSolid(sideTile, midTile)) {
+            this.vx *= -1;
+        }
+
+        this.y += this.vy * 60 * dt;
+        const bLeft = Math.floor(this.x / map.tileSize);
+        const bRight = Math.floor((this.x + this.w - 1) / map.tileSize);
+        const botTile = Math.floor((this.y + this.h) / map.tileSize);
+        if (map.isSolid(bLeft, botTile) || map.isSolid(bRight, botTile)) {
+            this.y = botTile * map.tileSize - this.h;
+            this.vy = 0;
+            this.isGrounded = true;
+        }
+    }
+
+    render(ctx, camX) {
+        const dx = Math.round(this.x - camX);
+        const dy = Math.round(this.y);
+
+        ctx.save();
+        if (this.type === 'VINYL') {
+            // Spinning Golden Vinyl Disc
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(dx + 12, dy + 12, 11, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffe600';
+            ctx.beginPath();
+            ctx.arc(dx + 12, dy + 12, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffe600';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        } else if (this.type === 'MIC') {
+            // Golden Mic Power-up
+            ctx.fillStyle = '#ffe600';
+            ctx.fillRect(dx + 8, dy + 10, 8, 14);
+            ctx.fillStyle = '#ff007f';
+            ctx.beginPath();
+            ctx.arc(dx + 12, dy + 7, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowColor = '#ffe600';
+            ctx.shadowBlur = 10;
+        } else if (this.type === 'GUN') {
+            // Neon Beat Blaster
+            ctx.fillStyle = '#ff00a0';
+            ctx.fillRect(dx + 2, dy + 4, 18, 10);
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(dx + 10, dy + 14, 6, 8);
+            ctx.fillRect(dx + 18, dy + 6, 6, 4);
+        }
+        ctx.restore();
+    }
+}
+
+// --- ENEMIES (HATERS, TROLLS & BOTS) ---
+class Enemy {
+    constructor(x, y, type = 'TROLL') {
+        this.x = x;
+        this.y = y;
+        this.type = type; // 'TROLL', 'BOT', 'CRITIC', 'BOSS'
+        this.w = type === 'BOSS' ? 70 : 30;
+        this.h = type === 'BOSS' ? 84 : 32;
+        this.vx = type === 'BOSS' ? -1.0 : -1.3;
+        this.vy = 0;
+        this.alive = true;
+        this.squished = false;
+        this.squishTimer = 0;
+        this.bossHp = 6;
+        this.bossJumpTimer = 0;
+        this.attackTimer = 0;
+    }
+
+    update(dt, map, player) {
+        if (this.squished) {
+            this.squishTimer += dt;
+            if (this.squishTimer > 0.45) this.alive = false;
+            return;
+        }
+
+        if (this.type === 'BOSS') {
+            this.updateBoss(dt, map, player);
+            return;
+        }
+
+        // Standard Hater / Bot patrol
+        this.vy += 22 * dt;
+        if (this.vy > 10) this.vy = 10;
+
+        this.x += this.vx * 60 * dt;
+        const sideTile = Math.floor((this.x + (this.vx > 0 ? this.w : 0)) / map.tileSize);
+        const midTile = Math.floor((this.y + 16) / map.tileSize);
+        if (map.isSolid(sideTile, midTile)) {
+            this.vx *= -1;
+        }
+
+        this.y += this.vy * 60 * dt;
+        const bLeft = Math.floor(this.x / map.tileSize);
+        const bRight = Math.floor((this.x + this.w - 1) / map.tileSize);
+        const botTile = Math.floor((this.y + this.h) / map.tileSize);
+        if (map.isSolid(bLeft, botTile) || map.isSolid(bRight, botTile)) {
+            this.y = botTile * map.tileSize - this.h;
+            this.vy = 0;
+        }
+
+        if (this.y > map.pixelHeight + 80) this.alive = false;
+    }
+
+    updateBoss(dt, map, player) {
+        this.bossJumpTimer += dt;
+        this.attackTimer += dt;
+
+        // Boss patrolling on bridge
+        this.x += this.vx * 60 * dt;
+        if (this.x < map.bossMinX) {
+            this.x = map.bossMinX;
+            this.vx = 1.0;
+        }
+        if (this.x > map.bossMaxX) {
+            this.x = map.bossMaxX;
+            this.vx = -1.0;
+        }
+
+        // Boss Jumps periodically
+        if (this.bossJumpTimer > 2.8) {
+            this.bossJumpTimer = 0;
+            this.vy = -7.5;
+            Audio.playTone(80, 'sawtooth', 0.25, 0.2);
+        }
+
+        this.vy += 18 * dt;
+        this.y += this.vy * 60 * dt;
+
+        const botTile = Math.floor((this.y + this.h) / map.tileSize);
+        const midTileX = Math.floor((this.x + this.w / 2) / map.tileSize);
+        if (map.isSolid(midTileX, botTile)) {
+            this.y = botTile * map.tileSize - this.h;
+            this.vy = 0;
+        }
+
+        // Boss Throws "DISLIKES" Fireballs
+        if (this.attackTimer > 2.2) {
+            this.attackTimer = 0;
+            const dir = player.x < this.x ? -1 : 1;
+            bossAttacks.push(new BossDislike(this.x + (dir === -1 ? -10 : this.w + 10), this.y + 30, dir));
+            Audio.playTone(300, 'sawtooth', 0.15, 0.15, 90);
+        }
+
+        if (this.y > map.pixelHeight + 100) {
+            this.alive = false;
+            // Boss defeated by lava bridge drop
+            triggerBossDefeated();
+        }
+    }
+
+    render(ctx, camX) {
+        const dx = Math.round(this.x - camX);
+        const dy = Math.round(this.y);
+
+        ctx.save();
+        if (this.squished) {
+            // Squished Troll
+            ctx.fillStyle = '#ff2a2a';
+            ctx.fillRect(dx, dy + this.h - 10, this.w, 10);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(dx + 6, dy + this.h - 7, 5, 4);
+            ctx.fillRect(dx + this.w - 11, dy + this.h - 7, 5, 4);
+            ctx.restore();
+            return;
+        }
+
+        if (this.type === 'TROLL') {
+            // Internet Troll (Goomba style, grumpy keyboard warrior)
+            ctx.fillStyle = '#220838';
+            ctx.fillRect(dx, dy, this.w, this.h);
+            // Red eyes
+            ctx.fillStyle = '#ff0055';
+            ctx.fillRect(dx + 4, dy + 8, 8, 5);
+            ctx.fillRect(dx + this.w - 12, dy + 8, 8, 5);
+            // Grumpy mouth
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(dx + 7, dy + 22, this.w - 14, 3);
+            // Troll ears / horns
+            ctx.fillStyle = '#ff007f';
+            ctx.fillRect(dx - 3, dy - 3, 5, 6);
+            ctx.fillRect(dx + this.w - 2, dy - 3, 5, 6);
+        } else if (this.type === 'BOT') {
+            // Bot Difamador (Metallic with antenna and toxic gas)
+            ctx.fillStyle = '#00e5ff';
+            ctx.fillRect(dx, dy + 6, this.w, this.h - 6);
+            ctx.fillStyle = '#111';
+            ctx.fillRect(dx + 5, dy + 12, this.w - 10, 8);
+            ctx.fillStyle = '#ffe600';
+            ctx.fillText('01', dx + 8, dy + 19);
+            // Antenna
+            ctx.fillStyle = '#ff007f';
+            ctx.fillRect(dx + this.w / 2 - 2, dy - 4, 4, 10);
+            ctx.beginPath();
+            ctx.arc(dx + this.w / 2, dy - 5, 4, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (this.type === 'BOSS') {
+            // EL HATER MAYOR
+            // Big cyber demon suit with flaming neon aura
+            ctx.fillStyle = 'rgba(255, 0, 80, 0.25)';
+            ctx.fillRect(dx - 8, dy - 8, this.w + 16, this.h + 16);
+
+            // Armored Body
+            ctx.fillStyle = '#2a0845';
+            ctx.fillRect(dx, dy, this.w, this.h);
+            ctx.strokeStyle = '#ff007f';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(dx, dy, this.w, this.h);
+
+            // Angry glowing screen face
+            ctx.fillStyle = '#100020';
+            ctx.fillRect(dx + 8, dy + 12, this.w - 16, 28);
+            ctx.fillStyle = '#ff0033';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillText('HATER', dx + 11, dy + 32);
+
+            // Giant Thumbs Down symbols on shoulders
+            ctx.fillStyle = '#ff007f';
+            ctx.fillText('👎', dx - 8, dy + 25);
+            ctx.fillText('👎', dx + this.w - 10, dy + 25);
+
+            // Boss HP Bar
+            const barW = this.w;
+            const healthRatio = Math.max(0, this.bossHp / 6);
+            ctx.fillStyle = '#333';
+            ctx.fillRect(dx, dy - 16, barW, 6);
+            ctx.fillStyle = '#ff0033';
+            ctx.fillRect(dx, dy - 16, barW * healthRatio, 6);
+        }
+        ctx.restore();
+    }
+}
+
+// Boss Projectile: Dislike Flame
+let bossAttacks = [];
+class BossDislike {
+    constructor(x, y, dir) {
+        this.x = x;
+        this.y = y;
+        this.vx = dir * 4.2;
+        this.w = 20;
+        this.h = 20;
+        this.alive = true;
+    }
+
+    update(dt) {
+        this.x += this.vx * 60 * dt;
+        if (this.x < -100 || this.x > 3000) this.alive = false;
+    }
+
+    render(ctx, camX) {
+        const dx = Math.round(this.x - camX);
+        const dy = Math.round(this.y);
+        ctx.save();
+        ctx.font = '18px sans-serif';
+        ctx.shadowColor = '#ff0033';
+        ctx.shadowBlur = 12;
+        ctx.fillText('👎', dx, dy + 16);
+        ctx.restore();
+    }
+}
+
+// --- TILE MAP ENGINE ---
+class TileMap {
+    constructor(layout, tileSize = 32) {
+        this.tileSize = tileSize;
+        this.layout = layout;
+        this.rows = layout.length;
+        this.cols = layout[0].length;
+        this.pixelWidth = this.cols * tileSize;
+        this.pixelHeight = this.rows * tileSize;
+        this.bumpedBlocks = [];
+        this.bossMinX = 0;
+        this.bossMaxX = 0;
+        this.axeX = 0;
+        this.axeY = 0;
+        this.axeCut = false;
+        this.bridgeTiles = [];
+    }
+
+    isSolid(tx, ty) {
+        if (tx < 0 || tx >= this.cols || ty < 0 || ty >= this.rows) return false;
+        const char = this.layout[ty][tx];
+        return char === '#' || char === 'B' || char === '?' || char === 'P' || (char === '=' && !this.axeCut);
+    }
+
+    bumpBlock(tx, ty, player) {
+        const char = this.layout[ty][tx];
+        if (char === '?') {
+            // Replace with hit block 'X'
+            this.setTile(tx, ty, 'X');
+            this.bumpedBlocks.push({ tx, ty, offset: 0, dir: -1 });
+
+            // Spawn power-up or Vinyl
+            if (player.power === 0) {
+                // Golden Mic
+                items.push(new Item(tx * this.tileSize + 4, (ty - 1) * this.tileSize, 'MIC'));
+                Audio.powerup();
+            } else if (player.power === 1) {
+                // Beat Blaster
+                items.push(new Item(tx * this.tileSize + 4, (ty - 1) * this.tileSize, 'GUN'));
+                Audio.powerup();
+            } else {
+                // Vinyl disc
+                items.push(new Item(tx * this.tileSize + 4, (ty - 1) * this.tileSize, 'VINYL'));
+                coins++;
+                score += 200;
+                Audio.coin();
+                updateHUD();
+            }
+        } else if (char === 'B') {
+            // Breakable Beat Brick
+            if (player.power >= 1) {
+                this.setTile(tx, ty, '.');
+                Audio.stomp();
+                addParticles(tx * this.tileSize + 16, ty * this.tileSize + 16, '#ff007f', 12, 5);
+                score += 50;
+                updateHUD();
+            } else {
+                this.bumpedBlocks.push({ tx, ty, offset: 0, dir: -1 });
+                Audio.jump();
+            }
+        }
+    }
+
+    setTile(tx, ty, char) {
+        if (tx >= 0 && tx < this.cols && ty >= 0 && ty < this.rows) {
+            let row = this.layout[ty];
+            this.layout[ty] = row.substring(0, tx) + char + row.substring(tx + 1);
+        }
+    }
+
+    update(dt) {
+        // Handle block bounce animation
+        for (let i = this.bumpedBlocks.length - 1; i >= 0; i--) {
+            const b = this.bumpedBlocks[i];
+            b.offset += b.dir * 45 * dt;
+            if (b.offset < -8) b.dir = 1;
+            if (b.offset > 0) {
+                this.bumpedBlocks.splice(i, 1);
+            }
+        }
+    }
+
+    render(ctx, camX) {
+        const startCol = Math.max(0, Math.floor(camX / this.tileSize));
+        const endCol = Math.min(this.cols - 1, Math.floor((camX + V_WIDTH) / this.tileSize) + 1);
+
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = startCol; c <= endCol; c++) {
+                const char = this.layout[r][c];
+                if (char === '.') continue;
+
+                let drawY = r * this.tileSize;
+                const drawX = Math.round(c * this.tileSize - camX);
+
+                // Check bump offset
+                const bumped = this.bumpedBlocks.find(b => b.tx === c && b.ty === r);
+                if (bumped) {
+                    drawY += bumped.offset;
+                }
+
+                this.renderTile(ctx, char, drawX, drawY, c, r);
+            }
+        }
+
+        // Render Axe if castle stage
+        if (currentLevelIndex === 1 && !this.axeCut) {
+            ctx.save();
+            ctx.font = '24px sans-serif';
+            ctx.shadowColor = '#ffe600';
+            ctx.shadowBlur = 10;
+            ctx.fillText('🪓', this.axeX - camX, this.axeY + 24);
+            ctx.restore();
+        }
+    }
+
+    renderTile(ctx, char, x, y, col, row) {
+        switch (char) {
+            case '#': // Street pavement / Castle brick
+                if (currentLevelIndex === 0) {
+                    // Street Concrete + Neon spray line
+                    ctx.fillStyle = '#161622';
+                    ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                    ctx.fillStyle = '#222238';
+                    ctx.fillRect(x + 2, y + 2, this.tileSize - 4, this.tileSize - 4);
+                    ctx.fillStyle = '#00f0ff';
+                    ctx.fillRect(x, y, this.tileSize, 3);
+                } else {
+                    // Cyber Castle Obsidian Blocks
+                    ctx.fillStyle = '#0c0714';
+                    ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                    ctx.strokeStyle = '#ff0055';
+                    ctx.strokeRect(x + 1, y + 1, this.tileSize - 2, this.tileSize - 2);
+                }
+                break;
+
+            case 'B': // Beat Brick
+                ctx.fillStyle = '#611347';
+                ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                ctx.fillStyle = '#ff007f';
+                ctx.strokeRect(x + 2, y + 2, this.tileSize - 4, this.tileSize - 4);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(x + 6, y + 14, 20, 4);
+                break;
+
+            case '?': // Neon Rhyme Block
+                ctx.fillStyle = '#2a1a00';
+                ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                ctx.strokeStyle = '#ffe600';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x + 1, y + 1, this.tileSize - 2, this.tileSize - 2);
+                ctx.fillStyle = '#ffe600';
+                ctx.font = 'bold 18px monospace';
+                ctx.fillText('?', x + 10, y + 23);
+                break;
+
+            case 'X': // Hit / Empty Block
+                ctx.fillStyle = '#222';
+                ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                ctx.strokeStyle = '#555';
+                ctx.strokeRect(x + 1, y + 1, this.tileSize - 2, this.tileSize - 2);
+                break;
+
+            case 'P': // Pipe / Subwoofer Vent
+                ctx.fillStyle = '#00e5ff';
+                ctx.fillRect(x, y, this.tileSize, this.tileSize);
+                ctx.fillStyle = '#002030';
+                ctx.fillRect(x + 4, y + 4, this.tileSize - 8, this.tileSize - 8);
+                // Subwoofer speaker cone
+                ctx.fillStyle = '#00e5ff';
+                ctx.beginPath();
+                ctx.arc(x + 16, y + 16, 7, 0, Math.PI * 2);
+                ctx.fill();
+                break;
+
+            case '=': // Bridge Tiles
+                if (!this.axeCut) {
+                    ctx.fillStyle = '#552200';
+                    ctx.fillRect(x, y + 8, this.tileSize, 16);
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.fillRect(x + 2, y + 10, this.tileSize - 4, 4);
+                }
+                break;
+        }
+    }
+}
+
+// --- LEVEL MAP DESIGNS ---
+// Legend:
+// . = Air
+// # = Ground / Solid
+// B = Breakable Brick
+// ? = Power / Coin Box
+// P = Boombox Pipe
+// = = Bridge Tile
+const level1_street = [
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "........................................................................................................................",
+    "..................B?B?B..........................................B?B....................................................",
+    "......................................................BB?BB.............................................................",
+    ".......................................P...........................................P...............P....................",
+    "......................P................P...........................................P...............P.............####...",
+    "################################################    ####################################################################",
+    "################################################    ####################################################################",
+    "################################################    ####################################################################"
+];
+
+const level2_castle = [
+    "########################################################################################################################",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#..................................B?B.................................................................................#",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#......................................................................................................................#",
+    "#..........................................................=======================..................####################",
+    "#..........................................................=======================..................####################",
+    "###########################################################~~~~~~~~~~~~~~~~~~~~~~~#######################################",
+    "###########################################################~~~~~~~~~~~~~~~~~~~~~~~#######################################",
+    "###########################################################~~~~~~~~~~~~~~~~~~~~~~~#######################################"
+];
+
+// Instances
+let map;
+let player;
+let enemies = [];
+let items = [];
+let bullets = [];
+let cameraX = 0;
+let castleBoss = null;
+
+function loadLevel(index) {
+    currentLevelIndex = index;
+    enemies = [];
+    items = [];
+    bullets = [];
+    bossAttacks = [];
+    particles = [];
+    stageTime = 300;
+    timeAccumulator = 0;
+
+    const source = index === 0 ? level1_street : level2_castle;
+    map = new TileMap([...source], 32);
+
+    if (index === 0) {
+        player = new Player(64, 300, selectedHero);
+        // Spawn Street Enemies
+        enemies.push(new Enemy(380, 320, 'TROLL'));
+        enemies.push(new Enemy(520, 320, 'TROLL'));
+        enemies.push(new Enemy(740, 320, 'BOT'));
+        enemies.push(new Enemy(980, 320, 'TROLL'));
+        enemies.push(new Enemy(1250, 320, 'TROLL'));
+        enemies.push(new Enemy(1420, 320, 'BOT'));
+        enemies.push(new Enemy(1750, 320, 'TROLL'));
+        enemies.push(new Enemy(2050, 320, 'BOT'));
+    } else {
+        // Fortress Level
+        player = new Player(80, 260, selectedHero);
+        // Bridge setup
+        map.bossMinX = 1860;
+        map.bossMaxX = 2300;
+        map.axeX = 2420;
+        map.axeY = 280;
+
+        castleBoss = new Enemy(2120, 240, 'BOSS');
+        enemies.push(castleBoss);
+
+        // Minions guarding corridor
+        enemies.push(new Enemy(450, 280, 'BOT'));
+        enemies.push(new Enemy(750, 280, 'TROLL'));
+        enemies.push(new Enemy(1150, 280, 'BOT'));
+    }
+
+    updateHUD();
+}
+
+function restartLevel() {
+    loadLevel(currentLevelIndex);
+}
+
+// --- UPDATE LOOP ---
+function updateGame(dt) {
+    if (gameState !== 'PLAYING') return;
+
+    // Stage timer
+    timeAccumulator += dt;
+    if (timeAccumulator >= 1) {
+        timeAccumulator -= 1;
+        stageTime--;
+        updateHUD();
+        if (stageTime <= 0) {
+            player.die();
+        }
+    }
+
+    Audio.updateBeat(dt);
+    map.update(dt);
+    player.update(dt, map);
+
+    // Camera following player with clamp
+    const targetCamX = player.x - V_WIDTH * 0.35;
+    cameraX += (targetCamX - cameraX) * 0.12;
+    if (cameraX < 0) cameraX = 0;
+    if (cameraX > map.pixelWidth - V_WIDTH) cameraX = map.pixelWidth - V_WIDTH;
+
+    // Update Items
+    for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        item.update(dt, map);
+        if (!item.alive) {
+            items.splice(i, 1);
+            continue;
+        }
+
+        // Pickup collision
+        if (checkOverlap(player, item)) {
+            item.alive = false;
+            items.splice(i, 1);
+            if (item.type === 'MIC') {
+                if (player.power < 1) player.power = 1;
+                score += 1000;
+                Audio.powerup();
+            } else if (item.type === 'GUN') {
+                player.power = 2;
+                score += 1000;
+                Audio.powerup();
+            } else if (item.type === 'VINYL') {
+                coins++;
+                score += 200;
+                Audio.coin();
+            }
+            addParticles(player.x + player.w/2, player.y + player.h/2, '#00f0ff', 12, 4);
+            updateHUD();
+        }
+    }
+
+    // Update Bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.update(dt, map);
+        if (!b.alive) {
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        // Check bullet hit enemies
+        for (let j = 0; j < enemies.length; j++) {
+            const en = enemies[j];
+            if (en.alive && !en.squished && checkOverlap(b, en)) {
+                b.destroy();
+                if (en.type === 'BOSS') {
+                    en.bossHp--;
+                    Audio.bossHurt();
+                    addParticles(b.x, b.y, '#ff0033', 10, 4);
+                    if (en.bossHp <= 0) {
+                        en.alive = false;
+                        score += 5000;
+                        triggerBossDefeated();
+                    }
+                } else {
+                    en.alive = false;
+                    score += 300;
+                    Audio.stomp();
+                    addParticles(en.x + en.w/2, en.y + en.h/2, '#00f0ff', 14, 5);
+                }
+                updateHUD();
+                break;
+            }
+        }
+    }
+
+    // Update Boss Projectiles
+    for (let i = bossAttacks.length - 1; i >= 0; i--) {
+        const ba = bossAttacks[i];
+        ba.update(dt);
+        if (!ba.alive) {
+            bossAttacks.splice(i, 1);
+            continue;
+        }
+        if (checkOverlap(player, ba)) {
+            ba.alive = false;
+            bossAttacks.splice(i, 1);
+            player.hit();
+        }
+    }
+
+    // Update Enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const en = enemies[i];
+        en.update(dt, map, player);
+        if (!en.alive) {
+            enemies.splice(i, 1);
+            continue;
+        }
+
+        // Player vs Enemy Collision
+        if (!en.squished && !player.isDead && checkOverlap(player, en)) {
+            // Check stomp from above
+            const isFallingOnEnemy = player.vy > 0 && (player.y + player.h - player.vy * 60 * dt) <= en.y + 12;
+            if (isFallingOnEnemy && en.type !== 'BOSS') {
+                en.squished = true;
+                player.vy = -7.5;
+                score += 200;
+                Audio.stomp();
+                addParticles(en.x + en.w/2, en.y, '#00f0ff', 8, 3);
+                updateHUD();
+            } else {
+                player.hit();
+            }
+        }
+    }
+
+    // Castle Axe trigger (Cut Bridge)
+    if (currentLevelIndex === 1 && !map.axeCut) {
+        const axeBox = { x: map.axeX, y: map.axeY, w: 32, h: 32 };
+        if (checkOverlap(player, axeBox)) {
+            map.axeCut = true;
+            Audio.bossHurt();
+            addParticles(map.axeX + 16, map.axeY + 16, '#ffe600', 25, 6);
+            // Drop Mayor into Lava
+            if (castleBoss && castleBoss.alive) {
+                castleBoss.vx = 0;
+                castleBoss.vy = 8;
+            } else {
+                triggerBossDefeated();
+            }
+        }
+    }
+
+    // Level Clear flag or Castle Door reached
+    if (currentLevelIndex === 0 && player.x > map.pixelWidth - 120) {
+        gameState = 'LEVEL_CLEAR';
+        Audio.victoryTune();
+        setTimeout(() => {
+            loadLevel(1);
+            gameState = 'PLAYING';
+            Audio.isPlayingBeat = true;
+        }, 3000);
+    }
+
+    // Update Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+function triggerBossDefeated() {
+    Audio.victoryTune();
+    gameState = 'VICTORY';
+    Audio.isPlayingBeat = false;
+}
+
+function checkOverlap(a, b) {
+    return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+    );
+}
+
+function updateHUD() {
+    document.getElementById('ui-mc').innerText = selectedHero;
+    document.getElementById('ui-score').innerText = String(score).padStart(6, '0');
+    document.getElementById('ui-coins').innerText = 'x' + String(coins).padStart(2, '0');
+    document.getElementById('ui-stage').innerText = currentLevelIndex === 0 ? '1-1' : '1-2';
+    document.getElementById('ui-time').innerText = String(stageTime).padStart(3, '0');
+    document.getElementById('ui-lives').innerText = 'x' + lives;
+}
+
+// --- RENDER GAME ---
+function renderGame() {
+    ctx.clearRect(0, 0, V_WIDTH, V_HEIGHT);
+
+    // Parallax Urban Cyberpunk Background
+    renderBackground();
+
+    // TileMap
+    map.render(ctx, cameraX);
+
+    // Items
+    items.forEach(it => it.render(ctx, cameraX));
+
+    // Bullets
+    bullets.forEach(b => b.render(ctx, cameraX));
+
+    // Boss Attacks
+    bossAttacks.forEach(ba => ba.render(ctx, cameraX));
+
+    // Enemies
+    enemies.forEach(en => en.render(ctx, cameraX));
+
+    // Player
+    player.render(ctx, cameraX);
+
+    // Particles
+    particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(Math.round(p.x - cameraX), Math.round(p.y), p.size, p.size);
+        ctx.restore();
+    });
+
+    // Level Finish / Victory Cinemática
+    if (gameState === 'LEVEL_CLEAR') {
+        renderLevelClearOverlay();
+    } else if (gameState === 'VICTORY') {
+        renderVictoryCinematic();
+    }
+}
+
+// Visual Backgrounds (Parallax City + Lava in Castle)
+function renderBackground() {
+    if (currentLevelIndex === 0) {
+        // Street / Neon Skyline
+        const grad = ctx.createLinearGradient(0, 0, 0, V_HEIGHT);
+        grad.addColorStop(0, '#0a001a');
+        grad.addColorStop(0.65, '#2b003e');
+        grad.addColorStop(1, '#05020c');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+        // Distant Cyber Buildings
+        ctx.fillStyle = '#150626';
+        const bgOffset = cameraX * 0.15;
+        for (let i = 0; i < 18; i++) {
+            const bx = i * 90 - (bgOffset % 90);
+            const bh = 140 + (i % 5) * 35;
+            ctx.fillRect(bx, V_HEIGHT - bh - 60, 75, bh);
+
+            // Windows
+            ctx.fillStyle = (i % 2 === 0) ? '#ff007f33' : '#00f0ff33';
+            for (let wy = V_HEIGHT - bh - 50; wy < V_HEIGHT - 70; wy += 22) {
+                ctx.fillRect(bx + 10, wy, 12, 10);
+                ctx.fillRect(bx + 35, wy, 12, 10);
+                ctx.fillRect(bx + 55, wy, 12, 10);
+            }
+            ctx.fillStyle = '#150626';
+        }
+    } else {
+        // Dungeon / Lava Background
+        const grad = ctx.createLinearGradient(0, 0, 0, V_HEIGHT);
+        grad.addColorStop(0, '#0f0007');
+        grad.addColorStop(0.7, '#24000b');
+        grad.addColorStop(1, '#ff3300');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+        // Bubbling Lava at Bottom
+        ctx.fillStyle = '#ff2200';
+        ctx.fillRect(0, V_HEIGHT - 64, V_WIDTH, 64);
+        ctx.fillStyle = '#ffe600';
+        for (let lx = 0; lx < V_WIDTH; lx += 40) {
+            const wave = Math.sin((Date.now() / 250) + lx) * 5;
+            ctx.fillRect(lx, V_HEIGHT - 60 + wave, 28, 4);
+        }
+    }
+}
+
+// Stage transition text
+function renderLevelClearOverlay() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+    ctx.font = 'bold 34px monospace';
+    ctx.fillStyle = '#ffe600';
+    ctx.shadowColor = '#ff007f';
+    ctx.shadowBlur = 15;
+    ctx.textAlign = 'center';
+    ctx.fillText('¡STAGE 1-1 CONQUISTADO!', V_WIDTH / 2, V_HEIGHT / 2 - 20);
+    ctx.font = '20px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('ENTRANDO A LA FORTALEZA DEL HATER MAYOR...', V_WIDTH / 2, V_HEIGHT / 2 + 30);
+    ctx.restore();
+}
+
+// EPIC VICTORY CINEMATIC
+let victoryTimer = 0;
+function renderVictoryCinematic() {
+    victoryTimer += 0.016;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 0, 15, 0.88)';
+    ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+    ctx.textAlign = 'center';
+
+    // Glowing Rap Princess + Kevin / Samuel Sprite reunion
+    const cx = V_WIDTH / 2;
+    const cy = V_HEIGHT / 2;
+
+    // Confetti / Neon Sparks
+    if (Math.random() < 0.35) {
+        addParticles(Math.random() * V_WIDTH, Math.random() * V_HEIGHT * 0.7, '#00f0ff', 4, 3);
+        addParticles(Math.random() * V_WIDTH, Math.random() * V_HEIGHT * 0.7, '#ffe600', 4, 3);
+    }
+
+    // Hero on left
+    ctx.font = 'bold 44px sans-serif';
+    ctx.fillText(selectedHero === 'KEVIN' ? '🧢' : '🎧', cx - 70, cy - 10);
+    // Princess of Rap on right
+    ctx.fillText('👑🎤', cx + 70, cy - 10);
+
+    ctx.font = 'bold 36px monospace';
+    ctx.fillStyle = '#ffe600';
+    ctx.shadowColor = '#ff007f';
+    ctx.shadowBlur = 20;
+    ctx.fillText('¡LA PRINCESA DEL RAP HA SIDO RESCATADA!', cx, cy - 85);
+
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 10;
+    ctx.fillText(`"${selectedHero.toUpperCase()} Y SAMUEL TIENEN EL FLOW DEFINITIVO."`, cx, cy + 55);
+    ctx.fillText('EL HATER MAYOR FUE DESMANTELADO EN SU PROPIA LAVA.', cx, cy + 85);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px monospace';
+    ctx.fillText('PRESIONA ENTER O TOCA LA PANTALLA PARA EL SIGUIENTE CYPHER (REINTENTAR)', cx, cy + 140);
+
+    ctx.restore();
+}
+
+// --- TITLE & MENU RENDERING ---
+function renderTitleScreen() {
+    ctx.save();
+    // Cyberpunk Gradient
+    const g = ctx.createLinearGradient(0, 0, 0, V_HEIGHT);
+    g.addColorStop(0, '#0a0117');
+    g.addColorStop(0.5, '#220033');
+    g.addColorStop(1, '#050008');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+    // Decorative Street Boombox art
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#ff007f';
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#ffe600';
+    ctx.font = 'bold 50px monospace';
+    ctx.fillText('RAP BROS', V_WIDTH / 2, 110);
+
+    ctx.font = 'bold 26px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 15;
+    ctx.fillText('KEVIN & SAMUEL', V_WIDTH / 2, 150);
+
+    ctx.font = '15px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 6;
+    ctx.fillText('RESCATA A LA PRINCESA DEL RAP DEL HATER MAYOR', V_WIDTH / 2, 185);
+
+    // Character Selection Cards
+    const cardY = 220;
+    const w = 180;
+    const h = 140;
+
+    // Card 1: Kevin
+    const kx = V_WIDTH / 2 - 210;
+    ctx.fillStyle = selectedHero === 'KEVIN' ? 'rgba(255, 0, 128, 0.35)' : 'rgba(20, 20, 35, 0.6)';
+    ctx.fillRect(kx, cardY, w, h);
+    ctx.strokeStyle = selectedHero === 'KEVIN' ? '#ffe600' : '#444';
+    ctx.lineWidth = selectedHero === 'KEVIN' ? 3 : 1;
+    ctx.strokeRect(kx, cardY, w, h);
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#ff0055';
+    ctx.fillText('KEVIN', kx + w/2, cardY + 30);
+    ctx.font = '36px sans-serif';
+    ctx.fillText('🧢🎤', kx + w/2, cardY + 75);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#ffe600';
+    ctx.fillText('AGILIDAD & FLOW', kx + w/2, cardY + 115);
+
+    // Card 2: Samuel
+    const sx = V_WIDTH / 2 + 30;
+    ctx.fillStyle = selectedHero === 'SAMUEL' ? 'rgba(0, 240, 255, 0.35)' : 'rgba(20, 20, 35, 0.6)';
+    ctx.fillRect(sx, cardY, w, h);
+    ctx.strokeStyle = selectedHero === 'SAMUEL' ? '#ffe600' : '#444';
+    ctx.lineWidth = selectedHero === 'SAMUEL' ? 3 : 1;
+    ctx.strokeRect(sx, cardY, w, h);
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('SAMUEL', sx + w/2, cardY + 30);
+    ctx.font = '36px sans-serif';
+    ctx.fillText('🎧🔥', sx + w/2, cardY + 75);
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('BOUNCE & BASS', sx + w/2, cardY + 115);
+
+    // Instructions / Start prompt
+    ctx.fillStyle = '#ffe600';
+    ctx.font = 'bold 18px monospace';
+    const blink = Math.floor(Date.now() / 450) % 2 === 0;
+    if (blink) {
+        ctx.fillText('► PRESIONA [ENTER] O [TAP] PARA INICIAR ◄', V_WIDTH / 2, 405);
+    }
+
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('CAMBIAR MC: [FLECHAS / TOUCH] | SALTAR: [ESPACIO/JUMP] | DISPARAR RIMA: [Z/MIC]', V_WIDTH / 2, 445);
+
+    ctx.restore();
+}
+
+function renderGameOver() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 0, 5, 0.9)';
+    ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff0033';
+    ctx.shadowColor = '#ff0033';
+    ctx.shadowBlur = 25;
+    ctx.font = 'bold 48px monospace';
+    ctx.fillText('SE APAGÓ EL MICRÓFONO', V_WIDTH / 2, V_HEIGHT / 2 - 30);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px monospace';
+    ctx.shadowBlur = 5;
+    ctx.fillText('LOS HATERS DOMINARON EL ESCENARIO', V_WIDTH / 2, V_HEIGHT / 2 + 15);
+
+    ctx.fillStyle = '#ffe600';
+    ctx.font = '16px monospace';
+    ctx.fillText('PRESIONA [ENTER] O TOCA LA PANTALLA PARA REVIVIR LA BATALLA', V_WIDTH / 2, V_HEIGHT / 2 + 75);
+
+    ctx.restore();
+}
+
+// Global Press Handler
+function handleEnterPress() {
+    Audio.init();
+    if (gameState === 'TITLE') {
+        gameState = 'PLAYING';
+        Audio.isPlayingBeat = true;
+        score = 0;
+        coins = 0;
+        lives = 3;
+        loadLevel(0);
+    } else if (gameState === 'GAME_OVER' || gameState === 'VICTORY') {
+        gameState = 'TITLE';
+        Audio.isPlayingBeat = false;
+    }
+}
+
+// Character toggling on TV/Keyboard
+window.addEventListener('keydown', (e) => {
+    if (gameState === 'TITLE') {
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+            selectedHero = 'KEVIN';
+            Audio.coin();
+        } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+            selectedHero = 'SAMUEL';
+            Audio.coin();
+        }
+    }
+});
+
+// Canvas Click / Tap for Title and Menus
+canvas.addEventListener('pointerdown', (e) => {
+    Audio.init();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+
+    if (gameState === 'TITLE') {
+        // Check character box clicks
+        if (cx < V_WIDTH / 2) {
+            selectedHero = 'KEVIN';
+        } else {
+            selectedHero = 'SAMUEL';
+        }
+        Audio.coin();
+        // Start game
+        setTimeout(() => handleEnterPress(), 150);
+    } else if (gameState === 'GAME_OVER' || gameState === 'VICTORY') {
+        handleEnterPress();
+    }
+});
+
+// --- MAIN ENGINE TICK LOOP ---
+let lastTime = performance.now();
+function gameLoop(now) {
+    let dt = (now - lastTime) / 1000;
+    if (dt > 0.08) dt = 0.08; // Clamp lag spike
+    lastTime = now;
+
+    if (gameState === 'PLAYING') {
+        updateGame(dt);
+        renderGame();
+    } else if (gameState === 'TITLE') {
+        renderTitleScreen();
+    } else if (gameState === 'LEVEL_CLEAR') {
+        renderGame();
+    } else if (gameState === 'VICTORY') {
+        renderGame();
+    } else if (gameState === 'GAME_OVER') {
+        renderGameOver();
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Startup Initialization
+window.addEventListener('DOMContentLoaded', () => {
+    setupTouch();
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+});
+</script>
+</body>
+</html>
